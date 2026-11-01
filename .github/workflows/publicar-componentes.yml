@@ -1,0 +1,76 @@
+name: Publicar componentes
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "publicar-*"
+
+permissions:
+  contents: write
+
+env:
+  LLAMA_TAG: b12032
+  MODELO_ARQUIVO: Qwen3-1.7B-Q4_K_M.gguf
+  MODELO_URL: https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf
+  MODELO_SHA256: b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897
+  MODELO_VERSAO: 1.0.0
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Baixar das fontes oficiais
+        run: |
+          set -euo pipefail
+          mkdir saida
+
+          pacote=$(curl -fsSL "https://api.adoptium.net/v3/assets/latest/21/hotspot?architecture=x64&image_type=jre&os=windows")
+          curl -fsSL -o saida/java.zip "$(jq -r '.[0].binary.package.link' <<<"$pacote")"
+          echo "$(jq -r '.[0].binary.package.checksum' <<<"$pacote")  saida/java.zip" | sha256sum -c -
+          jq -r '.[0].version | "JAVA_VERSAO=\(.major).\(.minor).\(.security)"' <<<"$pacote" >> "$GITHUB_ENV"
+
+          curl -fsSL -o saida/languagetool.zip https://languagetool.org/download/LanguageTool-stable.zip
+          versao=$(unzip -Z1 saida/languagetool.zip | head -1 | sed -E 's#^LanguageTool-([0-9.]+).*#\1#')
+          echo "LT_VERSAO=$versao" >> "$GITHUB_ENV"
+
+          curl -fsSL -o saida/llama.zip "https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_TAG}/llama-${LLAMA_TAG}-bin-win-cpu-x64.zip"
+          echo "LLAMA_VERSAO=${LLAMA_TAG#b}.0.0" >> "$GITHUB_ENV"
+
+          curl -fsSL -o "saida/${MODELO_ARQUIVO}" "$MODELO_URL"
+          echo "${MODELO_SHA256}  saida/${MODELO_ARQUIVO}" | sha256sum -c -
+
+      - name: Empacotar programa e regras
+        run: |
+          set -euo pipefail
+          zip -r saida/programa.zip corretor -x '*/__pycache__/*'
+          (cd dados && zip ../saida/regras.zip regras.json correcoes_digitacao.json)
+          echo "PROGRAMA_VERSAO=$(sed -E 's/.*"(.+)".*/\1/' corretor/__init__.py)" >> "$GITHUB_ENV"
+          echo "REGRAS_VERSAO=$(jq -r .versao dados/regras.json)" >> "$GITHUB_ENV"
+
+      - name: Montar manifesto
+        run: |
+          python3 ferramentas/montar_manifesto.py saida \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/componentes" \
+            "java=${JAVA_VERSAO}=java.zip" \
+            "languagetool=${LT_VERSAO}=languagetool.zip" \
+            "llama=${LLAMA_VERSAO}=llama.zip" \
+            "modelo=${MODELO_VERSAO}=${MODELO_ARQUIVO}" \
+            "programa=${PROGRAMA_VERSAO}=programa.zip" \
+            "regras=${REGRAS_VERSAO}=regras.zip"
+          cat saida/manifesto.json
+
+      - name: Publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view componentes >/dev/null 2>&1 || \
+            gh release create componentes --title "Componentes" --notes "Arquivos usados pela instalação e pelas atualizações do corretor."
+          # O manifesto vai por último: antes disso, as instalações continuam vendo a versão anterior completa.
+          for arquivo in saida/*; do
+            [ "$arquivo" = saida/manifesto.json ] || gh release upload componentes "$arquivo" --clobber
+          done
+          gh release upload componentes saida/manifesto.json --clobber

@@ -1,0 +1,30 @@
+{
+  "versao": "0.1.0",
+  "ignorar": ["Ezer", "Iadã", "Ferreira", "PJe", "OAB", "RPV", "INSS", "CNJ", "TJES", "TRT", "STJ", "STF"],
+  "substituicoes": [
+    {"padrao": "\\bvc\\b", "troca": "você", "motivo": "Abreviação informal"},
+    {"padrao": "\\bvcs\\b", "troca": "vocês", "motivo": "Abreviação informal"},
+    {"padrao": "\\btb\\b", "troca": "também", "motivo": "Abreviação informal"},
+    {"padrao": "\\bblz\\b", "troca": "certo", "motivo": "Abreviação informal"},
+    {"padrao": "\\bconcerteza\\b", "troca": "com certeza", "motivo": "Grafia: são duas palavras"},
+    {"padrao": "\\bderrepente\\b", "troca": "de repente", "motivo": "Grafia: são duas palavras"},
+    {"padrao": "\\bagente (vai|vamos|pode|precisa|tem)\\b", "troca": "a gente \\1", "motivo": "\"A gente\" é separado neste sentido"},
+    {"padrao": "\\ba gente vamos\\b", "troca": "a gente vai", "motivo": "Concordância: \"a gente\" pede verbo no singular"},
+    {"padrao": "\\bseje\\b", "troca": "seja", "motivo": "Conjugação do verbo ser"},
+    {"padrao": "\\besteje\\b", "troca": "esteja", "motivo": "Conjugação do verbo estar"},
+    {"padrao": "\\bmenas\\b", "troca": "menos", "motivo": "\"Menos\" não varia"},
+    {"padrao": "\\bhouveram\\b", "troca": "houve", "motivo": "\"Haver\" no sentido de existir não vai ao plural"},
+    {"padrao": "\\bfazem (\\d+|dois|duas|três|quatro|cinco|seis|sete|oito|nove|dez|alguns|algumas|muitos|muitas) (dias|semanas|meses|anos)\\b", "troca": "faz \\1 \\2", "motivo": "\"Fazer\" indicando tempo não vai ao plural"},
+    {"padrao": "\\batravez\\b", "troca": "através", "motivo": "Grafia"},
+    {"padrao": "\\bopnião\\b", "troca": "opinião", "motivo": "Grafia"},
+    {"padrao": "\\bexcessão\\b", "troca": "exceção", "motivo": "Grafia"},
+    {"padrao": "\\bprevilégio\\b", "troca": "privilégio", "motivo": "Grafia"},
+    {"padrao": "\\badevogado\\b", "troca": "advogado", "motivo": "Grafia"},
+    {"padrao": "\\bsentensa\\b", "troca": "sentença", "motivo": "Grafia"},
+    {"padrao": "\\bate\\b", "troca": "até", "motivo": "Acentuação"},
+    {"padrao": "\\bamanha\\b", "troca": "amanhã", "motivo": "Acentuação"},
+    {"padrao": "\\besta (em|no|na|nos|nas|sendo|aguardando|pronto|pronta|pendente|marcada|marcado)\\b", "troca": "está \\1", "motivo": "Verbo estar leva acento"},
+    {"padrao": "\\bas (\\d{1,2})(h|:)", "troca": "às \\1\\2", "motivo": "Crase antes de horas"},
+    {"padrao": "\\b(ontem|hoje|amanhã|amanha) a (noite|tarde)\\b", "troca": "\\1 à \\2", "motivo": "Crase em locução de tempo"}
+  ]
+}
