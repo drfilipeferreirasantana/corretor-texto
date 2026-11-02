@@ -1,5 +1,6 @@
 import json
 import unittest
+from unittest import mock
 
 from corretor import config, digitacao, janelas
 from corretor.digitacao import Motor
@@ -321,6 +322,31 @@ class Janela(unittest.TestCase):
         self.assertEqual(janelas.compor_acento("^", "E"), "Ê")
         self.assertEqual(janelas.compor_acento("´", " "), "´")
         self.assertEqual(janelas.compor_acento("´", "x"), "´x")
+
+    def test_letras_sem_consultar_o_teclado(self):
+        self.assertEqual(janelas.letra_da_tecla(0x45, False, False), "e")
+        self.assertEqual(janelas.letra_da_tecla(0x45, True, False), "E")
+        self.assertEqual(janelas.letra_da_tecla(0x45, False, True), "E")
+        self.assertEqual(janelas.letra_da_tecla(0x45, True, True), "e")
+
+    def test_sequencia_de_teclas_com_acento(self):
+        vistos = []
+        gancho = janelas.GanchoEntrada(lambda t, c: vistos.append(c), lambda: None)
+        with mock.patch.object(janelas, "tecla_de_acento", lambda vk, s, j: "´" if vk == 0xDB else ""), \
+             mock.patch.object(janelas, "traduzir_tecla", side_effect=AssertionError("consulta insegura")):
+            for vk in (0xDB, 0x45, 0x20, 0xDB, 0x20):
+                gancho._tratar_caractere(vk, 0, False)
+        self.assertEqual("".join(vistos), "é ´")
+        self.assertEqual(gancho.acento, "")
+
+    def test_nao_consulta_o_teclado_com_acento_em_andamento(self):
+        vistos = []
+        gancho = janelas.GanchoEntrada(lambda t, c: vistos.append(t), lambda: None)
+        with mock.patch.object(janelas, "tecla_de_acento", lambda vk, s, j: "´" if vk == 0xDB else ""), \
+             mock.patch.object(janelas, "traduzir_tecla", side_effect=AssertionError("consulta insegura")):
+            gancho._tratar_caractere(0xDB, 0, False)
+            gancho._tratar_caractere(0x31, 0, False)
+        self.assertEqual(vistos, ["mover"])
 
     def test_acento_que_o_windows_ja_compos(self):
         self.assertEqual(janelas.compor_acento("´", "é"), "é")

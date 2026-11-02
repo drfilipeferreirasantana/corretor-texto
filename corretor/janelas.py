@@ -237,7 +237,7 @@ LLKHF_INJECTED = 0x10
 KEYEVENTF_UNICODE = 0x0004
 VK_BACK, VK_RETURN, VK_CAPITAL = 0x08, 0x0D, 0x14
 _MODIFICADORES = {0x10, 0x11, 0x12, 0x14, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5}
-_COMBINANTES = {"´": "́", "`": "̀", "~": "̃", "^": "̂", "¨": "̈"}
+_COMBINANTES = {"´": "́", "'": "́", "`": "̀", "~": "̃", "^": "̂", "¨": "̈"}
 _NAO_ALTERAR_TECLADO = 0x4
 HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
 
@@ -260,7 +260,10 @@ _tipos(user32.GetKeyboardLayout, [wintypes.DWORD], wintypes.HKL)
 _tipos(user32.GetKeyState, [ctypes.c_int], ctypes.c_short)
 _tipos(user32.ToUnicodeEx, [wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_ubyte), wintypes.LPWSTR,
                             ctypes.c_int, wintypes.UINT, wintypes.HKL], ctypes.c_int)
+_tipos(user32.MapVirtualKeyExW, [wintypes.UINT, wintypes.UINT, wintypes.HKL], wintypes.UINT)
 _tipos(kernel32.GetCurrentThreadId, [], wintypes.DWORD)
+_VK_PARA_CARACTERE, _TECLA_MORTA = 2, 0x80000000
+_ACENTO_COM_SHIFT = {"´": "`", "'": "`", "~": "^"}
 
 
 _tipos(user32.GetWindowLongPtrW, [wintypes.HWND, ctypes.c_int], ctypes.c_ssize_t)
@@ -344,7 +347,21 @@ def traduzir_tecla(vk: int, scan: int, janela) -> str:
     buffer = ctypes.create_unicode_buffer(8)
     # Com este sinalizador a consulta não consome o acento que o usuário acabou de digitar.
     total = user32.ToUnicodeEx(vk, scan, estado, buffer, 8, _NAO_ALTERAR_TECLADO, layout)
-    return buffer.value[:abs(total)] if total else ""
+    return buffer.value[:total] if total > 0 else ""
+
+
+def tecla_de_acento(vk: int, shift: bool, janela) -> str:
+    """Reconhece ´ ` ~ ^ sem ToUnicodeEx, que pode desmontar o acento no programa onde se está digitando."""
+    layout = user32.GetKeyboardLayout(user32.GetWindowThreadProcessId(janela, None))
+    mapa = user32.MapVirtualKeyExW(vk, _VK_PARA_CARACTERE, layout)
+    if not mapa & _TECLA_MORTA:
+        return ""
+    base = chr(mapa & 0xFFFF)
+    return _ACENTO_COM_SHIFT.get(base, base) if shift else base
+
+
+def letra_da_tecla(vk: int, shift: bool, caps: bool) -> str:
+    return chr(vk) if shift != caps else chr(vk).lower()
 
 
 def compor_acento(acento: str, tecla: str) -> str:
@@ -391,18 +408,33 @@ class GanchoEntrada(threading.Thread):
             self.acento = ""
             self.ao_teclar("apagar", None)
         else:
-            texto = traduzir_tecla(vk, dados.scanCode, user32.GetForegroundWindow())
-            if not texto or not texto.isprintable():
-                self.acento = ""
-                self.ao_teclar("mover", None)
-            elif texto in _COMBINANTES and not self.acento:
-                self.acento = texto
-            else:
-                if self.acento:
-                    texto, self.acento = compor_acento(self.acento, texto), ""
-                for caractere in texto:
-                    self.ao_teclar("caractere", caractere)
+            self._tratar_caractere(vk, dados.scanCode, bool(ctrl or alt))
         return False
+
+    def _tratar_caractere(self, vk: int, scan: int, com_altgr: bool) -> None:
+        janela = user32.GetForegroundWindow()
+        shift = bool(user32.GetAsyncKeyState(VK_SHIFT) & 0x8000)
+        acento = tecla_de_acento(vk, shift, janela)
+        if acento and not self.acento:
+            self.acento = acento
+            return
+        if 0x41 <= vk <= 0x5A and not com_altgr:
+            texto = letra_da_tecla(vk, shift, bool(user32.GetKeyState(VK_CAPITAL) & 1))
+        elif vk == 0x20:
+            texto = " "
+        elif acento or self.acento or (shift and vk == 0x36):
+            # Com acento em andamento, ou no ¨ (Shift+6), nenhuma consulta é segura: só perde o controle da palavra.
+            texto = ""
+        else:
+            texto = traduzir_tecla(vk, scan, janela)
+        if not texto or not texto.isprintable():
+            self.acento = ""
+            self.ao_teclar("mover", None)
+            return
+        if self.acento:
+            texto, self.acento = compor_acento(self.acento, texto), ""
+        for caractere in texto:
+            self.ao_teclar("caractere", caractere)
 
     def _teclado(self, codigo, wparam, lparam):
         if codigo == 0 and wparam in (WM_KEYDOWN, WM_SYSKEYDOWN):
