@@ -14,6 +14,7 @@ _ABREVIACOES = {"dr", "dra", "sr", "sra", "srta", "prof", "profa", "art", "arts"
                 "fls", "pág", "p", "etc", "ex", "exa", "exmo", "exma", "v"}
 _TAMANHO_MINIMO_CONSULTA = 4
 _MEMORIA_CONTEXTO = 120
+_MAXIMO_PENDENTES = 8
 
 
 @dataclass
@@ -47,8 +48,21 @@ class Motor:
         self.palavras = 0
         self.desfazer = None
         self.pular_proximo = False
-        self.consulta = None
+        self.pendentes = {}
         self.numero_consulta = getattr(self, "numero_consulta", 0)
+
+    def _ajustar_pendentes(self, acao: Acao, somente_antes_de: int | None = None, exceto: int | None = None) -> None:
+        """A tela mudou à direita das palavras aguardando resposta, e a contagem delas precisa acompanhar."""
+        for numero, consulta in list(self.pendentes.items()):
+            if numero == exceto or (somente_antes_de is not None and numero >= somente_antes_de):
+                continue
+            depois = consulta["depois"]
+            if acao.apagar > len(depois):
+                del self.pendentes[numero]  # a própria palavra mudou
+            else:
+                consulta["depois"] = depois[:len(depois) - acao.apagar] + acao.escrever
+                if len(consulta["depois"]) > _MEMORIA_CONTEXTO:
+                    del self.pendentes[numero]
 
     def nova_mensagem(self):
         """Enter, clique ou troca de janela: o próximo texto é tratado como início de frase."""
@@ -65,7 +79,7 @@ class Motor:
     def apagar(self) -> Acao | None:
         with self.trava:
             desfazer, self.desfazer = self.desfazer, None
-            self.consulta = None
+            self._ajustar_pendentes(Acao(1, ""))
             if desfazer:
                 corrigido, original, nucleo = desfazer
                 self.token = original
@@ -73,7 +87,9 @@ class Motor:
                 self.pular_proximo = True
                 if nucleo:
                     self.ignorar.add(nucleo.casefold())
-                return Acao(len(corrigido), original)
+                acao = Acao(len(corrigido), original)
+                self._ajustar_pendentes(acao)
+                return acao
             self.recente = self.recente[:-1]
             if self.token:
                 self.token = self.token[:-1]
@@ -85,8 +101,7 @@ class Motor:
         with self.trava:
             self.desfazer = None
             self.recente = (self.recente + caractere)[-_MEMORIA_CONTEXTO:]
-            if self.consulta:
-                self.consulta["depois"] += caractere
+            self._ajustar_pendentes(Acao(0, caractere))
             if not caractere.isspace():
                 self.token += caractere
                 return None, None
@@ -95,6 +110,8 @@ class Motor:
                 return None, None
             self.palavras += 1
             acao, consulta = self._avaliar(token, caractere)
+            if acao:
+                self._ajustar_pendentes(acao, exceto=consulta.numero if consulta else None)
             return self._aplicar_contexto(acao, consulta)
 
     def _aplicar_contexto(self, acao: Acao | None, consulta: Consulta | None) -> tuple[Acao | None, Consulta | None]:
@@ -114,12 +131,19 @@ class Motor:
         self.recente = novo[-_MEMORIA_CONTEXTO:]
         if novo == antes_token:
             return acao, consulta
-        comum = 0
-        while comum < min(len(antes), len(novo)) and antes[comum] == novo[comum]:
-            comum += 1
-        self.consulta = None
+        def inicio_igual(a: str, b: str) -> int:
+            comum = 0
+            while comum < min(len(a), len(b)) and a[comum] == b[comum]:
+                comum += 1
+            return comum
+
+        mudanca = inicio_igual(antes_token, novo)
+        self._ajustar_pendentes(Acao(len(antes_token) - mudanca, novo[mudanca:]))
+        if consulta and consulta.numero not in self.pendentes:
+            consulta = None
+        comum = inicio_igual(antes, novo)
         self.desfazer = (novo[comum:-1], antes[comum:-1], None)
-        return Acao(len(antes) - comum, novo[comum:]), None
+        return Acao(len(antes) - comum, novo[comum:]), consulta
 
     def finalizar(self) -> Acao | None:
         """Antes de enviar: corrige a última palavra e, em mensagens de 4 palavras ou mais, coloca o ponto."""
@@ -163,7 +187,6 @@ class Motor:
 
         acao = None
         if novo != nucleo:
-            self.consulta = None  # a tela mudou, e a contagem de uma resposta pendente deixaria de valer
             corrigido = antes + novo + depois
             self.desfazer = (corrigido, token, nucleo if chave in self.correcoes else None)
             acao = Acao(len(token) + 1, corrigido + espaco)
@@ -171,8 +194,12 @@ class Motor:
         nome_proprio = nucleo[0].isupper() and not inicio
         if chave not in self.correcoes and len(nucleo) >= _TAMANHO_MINIMO_CONSULTA and not nome_proprio:
             self.numero_consulta += 1
-            self.consulta = {"numero": self.numero_consulta, "nucleo": nucleo, "antes": antes, "fim": depois,
-                             "espaco": espaco, "escrito": antes + novo + depois + espaco, "depois": ""}
+            self.pendentes[self.numero_consulta] = {
+                "nucleo": nucleo, "antes": antes, "fim": depois, "espaco": espaco,
+                "escrito": antes + novo + depois + espaco, "depois": "",
+            }
+            if len(self.pendentes) > _MAXIMO_PENDENTES:
+                del self.pendentes[min(self.pendentes)]
             consulta = Consulta(self.numero_consulta, nucleo)
         return acao, consulta
 
@@ -185,19 +212,26 @@ class Motor:
     def resposta_consulta(self, numero: int, sugestao: str | None) -> Acao | None:
         """Resposta do LanguageTool, que pode chegar quando já se digitou mais."""
         with self.trava:
-            consulta = self.consulta
-            if not sugestao or not consulta or consulta["numero"] != numero:
+            if not sugestao:
+                self.pendentes.pop(numero, None)
                 return None
-            self.consulta = None
-            self.recente = ""
+            consulta = self.pendentes.pop(numero, None)
+            if not consulta:
+                return None
             nucleo_escrito = consulta["escrito"].removeprefix(consulta["antes"])
             maiuscula = nucleo_escrito[:1].isupper()
             nova = sugestao[0].upper() + sugestao[1:] if maiuscula else sugestao
             corrigido = consulta["antes"] + nova + consulta["fim"]
             if not consulta["depois"]:
                 self.desfazer = (corrigido, consulta["escrito"].rstrip(), consulta["nucleo"])
-            return Acao(len(consulta["escrito"]) + len(consulta["depois"]),
+            acao = Acao(len(consulta["escrito"]) + len(consulta["depois"]),
                         corrigido + consulta["espaco"] + consulta["depois"])
+            self._ajustar_pendentes(acao, somente_antes_de=numero)
+            if acao.apagar <= len(self.recente):
+                self.recente = self.recente[:len(self.recente) - acao.apagar] + acao.escrever
+            else:
+                self.recente = ""
+            return acao
 
 
 def janela_permitida(titulo: str, permitidos: list[str]) -> bool:
@@ -205,13 +239,23 @@ def janela_permitida(titulo: str, permitidos: list[str]) -> bool:
     return any(item.casefold() in titulo for item in permitidos)
 
 
-def consultar_ortografia(palavra: str, url: str) -> str | None:
-    for achado in correcao.consultar(palavra, url):
-        rule = achado.get("rule", {})
-        if rule.get("issueType") == "misspelling" and achado.get("offset") == 0 \
-                and achado.get("length") == len(palavra) and achado.get("replacements"):
-            return achado["replacements"][0]["value"]
-    return None
+def localizar_erros(palavras: list[str], achados: list[dict]) -> dict[int, str]:
+    """Liga cada erro do LanguageTool à palavra do lote, pela posição no texto enviado."""
+    posicoes, posicao = {}, 0
+    for indice, palavra in enumerate(palavras):
+        tamanho = len(palavra.encode("utf-16-le")) // 2
+        posicoes[(posicao, tamanho)] = indice
+        posicao += tamanho + 1
+    sugestoes = {}
+    for achado in achados:
+        indice = posicoes.get((achado.get("offset"), achado.get("length")))
+        if indice is not None and achado.get("rule", {}).get("issueType") == "misspelling" and achado.get("replacements"):
+            sugestoes[indice] = achado["replacements"][0]["value"]
+    return sugestoes
+
+
+def consultar_ortografia(palavras: list[str], url: str) -> dict[int, str]:
+    return localizar_erros(palavras, correcao.consultar("\n".join(palavras), url))
 
 
 class CorrecaoAoDigitar:
@@ -290,17 +334,24 @@ class CorrecaoAoDigitar:
 
     def _consultar(self) -> None:
         while (consulta := self.fila_consultas.get()) is not None:
+            lote = [consulta]
+            while not self.fila_consultas.empty():
+                proxima = self.fila_consultas.get_nowait()
+                if proxima is None:
+                    return
+                lote.append(proxima)
             processo = self.linguagem.processo
             if not processo or processo.poll() is not None:
                 continue
             try:
-                sugestao = consultar_ortografia(consulta.nucleo, self.linguagem.url())
+                sugestoes = consultar_ortografia([c.nucleo for c in lote], self.linguagem.url())
             except (OSError, ValueError):
                 continue
             # Teclas enviadas entre o acento e a letra fariam o Windows perder o acento.
             limite = time.monotonic() + 3
             while self.gancho and self.gancho.acento and time.monotonic() < limite:
                 time.sleep(0.02)
-            acao = self.motor.resposta_consulta(consulta.numero, sugestao)
-            if acao:
-                self.fila_acoes.put(acao)
+            for indice, item in enumerate(lote):
+                acao = self.motor.resposta_consulta(item.numero, sugestoes.get(indice))
+                if acao:
+                    self.fila_acoes.put(acao)

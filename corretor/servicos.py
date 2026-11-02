@@ -6,8 +6,9 @@ import urllib.request
 
 from . import config
 
-# Prioridade abaixo do normal: o teclado e os outros programas não podem esperar por estes serviços.
-SEM_JANELA = 0x08000000 | 0x00004000
+SEM_JANELA = 0x08000000
+# O modelo ocupa todo o processador, e o teclado e os outros programas não podem esperar por ele.
+PRIORIDADE_BAIXA = 0x00004000
 
 
 class ComponenteAusente(Exception):
@@ -60,7 +61,7 @@ class LanguageTool(Servico):
         if not jars or not javas:
             raise ComponenteAusente("LanguageTool não instalado.")
         self.processo = subprocess.Popen(
-            [str(javas[-1]), "-Xmx1g", "-cp", jars[-1].name, "org.languagetool.server.HTTPServer",
+            [str(javas[-1]), "-Xmx1g", "-XX:+UseSerialGC", "-cp", jars[-1].name, "org.languagetool.server.HTTPServer",
              "--port", url.rsplit(":", 1)[1], "--allow-origin", "http://127.0.0.1"],
             cwd=str(jars[-1].parent), creationflags=SEM_JANELA,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -94,7 +95,7 @@ class Modelo(Servico):
         self.processo = subprocess.Popen(
             [str(executaveis[-1]), "-m", str(modelos[-1]), "--host", "127.0.0.1",
              "--port", url.rsplit(":", 1)[1], "--ctx-size", "4096", "--parallel", "1", "--threads", str(cfg["threads_modelo"])],
-            creationflags=SEM_JANELA, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=SEM_JANELA | PRIORIDADE_BAIXA, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         _aguardar(f"{url}/health", self.processo, 120, "Modelo")
         return url

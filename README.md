@@ -5,7 +5,7 @@ Corrige e reformula o texto selecionado em qualquer chat do Windows, sem enviar 
 ## Uso
 
 1. Inicie com `pythonw iniciar.pyw`. O ícone aparece na bandeja.
-2. Selecione o texto no chat.
+2. Selecione o texto no chat. Sem seleção, o programa usa a mensagem inteira da caixa de texto.
 3. Clique em **Corrigir** ou **Reformular** na barra flutuante, que pode ser arrastada pela alça. Também valem os atalhos `Ctrl+Shift+Y` ou `Ctrl+Shift+1` para corrigir, e `Ctrl+Shift+U` ou `Ctrl+Shift+2` para reformular.
 4. Confira a sugestão e clique em **Substituir**. O programa nunca envia a mensagem.
 

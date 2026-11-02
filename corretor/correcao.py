@@ -25,7 +25,7 @@ def aplicar_achados(texto: str, achados: list[dict], ignorar: list[str]) -> tupl
 
 def consultar(texto: str, url: str) -> list[dict]:
     corpo = urllib.parse.urlencode({"language": "pt-BR", "text": texto}).encode()
-    with urllib.request.urlopen(f"{url}/v2/check", corpo, timeout=30) as resposta:
+    with urllib.request.urlopen(f"{url}/v2/check", corpo, timeout=60) as resposta:
         return json.load(resposta)["matches"]
 
 

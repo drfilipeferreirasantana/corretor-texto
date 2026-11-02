@@ -259,11 +259,49 @@ class RespostaOrtografia(unittest.TestCase):
         t.motor.nova_mensagem()
         self.assertIsNone(t.motor.resposta_consulta(numero, "texto"))
 
-    def test_descarta_resposta_se_outra_correcao_mudou_a_tela(self):
+    def test_resposta_depois_de_outra_correcao_na_tela(self):
         t = tela()
         t.digitar("Certo testo concerteza ")
         self.assertEqual(t.texto, "Certo testo com certeza ")
-        self.assertIsNone(t.motor.resposta_consulta(t.consultas[0].numero, "texto"))
+        numero = next(c.numero for c in t.consultas if c.nucleo == "testo")
+        t.aplicar(t.motor.resposta_consulta(numero, "texto"))
+        self.assertEqual(t.texto, "Certo texto com certeza ")
+
+    def test_varias_palavras_aguardando_resposta(self):
+        t = tela()
+        t.digitar("Certo verbbo muito progama aqui pontuaçao mais ")
+        numeros = {c.nucleo: c.numero for c in t.consultas}
+        t.aplicar(t.motor.resposta_consulta(numeros["progama"], "programa"))
+        t.aplicar(t.motor.resposta_consulta(numeros["verbbo"], "verbo"))
+        t.aplicar(t.motor.resposta_consulta(numeros["pontuaçao"], "pontuação"))
+        self.assertIsNone(t.motor.resposta_consulta(numeros["muito"], None))
+        self.assertEqual(t.texto, "Certo verbo muito programa aqui pontuação mais ")
+
+    def test_resposta_com_palavra_em_andamento(self):
+        t = tela()
+        t.digitar("Certo verbbo progama ai")
+        numeros = {c.nucleo: c.numero for c in t.consultas}
+        t.aplicar(t.motor.resposta_consulta(numeros["verbbo"], "verbo"))
+        t.aplicar(t.motor.resposta_consulta(numeros["progama"], "programa"))
+        t.digitar("nda voce ")
+        self.assertEqual(t.texto, "Certo verbo programa ainda você ")
+
+    def test_backspace_mantem_contagem_das_pendentes(self):
+        t = tela()
+        t.digitar("Certo verbbo muitoo")
+        t.apagar()
+        numero = next(c.numero for c in t.consultas if c.nucleo == "verbbo")
+        t.aplicar(t.motor.resposta_consulta(numero, "verbo"))
+        self.assertEqual(t.texto, "Certo verbo muito")
+
+    def test_lote_liga_erro_a_palavra_certa(self):
+        palavras = ["muito", "pontuaçao", "bom", "verbbo"]
+        achados = [
+            {"offset": 6, "length": 9, "rule": {"issueType": "misspelling"}, "replacements": [{"value": "pontuação"}]},
+            {"offset": 20, "length": 6, "rule": {"issueType": "misspelling"}, "replacements": [{"value": "verbo"}]},
+            {"offset": 0, "length": 5, "rule": {"issueType": "style"}, "replacements": [{"value": "x"}]},
+        ]
+        self.assertEqual(digitacao.localizar_erros(palavras, achados), {1: "pontuação", 3: "verbo"})
 
     def test_nome_proprio_nao_consulta(self):
         t = tela()

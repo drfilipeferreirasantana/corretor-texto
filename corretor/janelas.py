@@ -175,15 +175,25 @@ def capturar_selecao(teclas_do_atalho: list[int]) -> tuple[str | None, str | Non
     """Copia a seleção da janela ativa. Devolve (texto selecionado, conteúdo anterior)."""
     aguardar_soltar_teclas([VK_SHIFT, VK_CONTROL, VK_MENU, *teclas_do_atalho])
     anterior = ler_area_transferencia()
-    sequencia = user32.GetClipboardSequenceNumber()
-    enviar_ctrl("c")
-    fim = time.monotonic() + 0.8
-    while time.monotonic() < fim:
-        if user32.GetClipboardSequenceNumber() != sequencia:
-            time.sleep(0.05)
-            return ler_area_transferencia(), anterior
-        time.sleep(0.02)
-    return None, anterior
+
+    def copiar() -> str | None:
+        sequencia = user32.GetClipboardSequenceNumber()
+        enviar_ctrl("c")
+        fim = time.monotonic() + 0.4
+        while time.monotonic() < fim:
+            if user32.GetClipboardSequenceNumber() != sequencia:
+                time.sleep(0.05)
+                return ler_area_transferencia()
+            time.sleep(0.02)
+        return None
+
+    texto = copiar()
+    if texto is None:
+        # Sem seleção, usa a mensagem inteira que está na caixa de texto.
+        enviar_ctrl("a")
+        time.sleep(0.05)
+        texto = copiar()
+    return texto, anterior
 
 
 def colar_na_janela(janela, texto: str, anterior: str | None) -> None:

@@ -139,7 +139,7 @@ class Aplicativo:
         if anterior is not None:
             janelas.gravar_area_transferencia(anterior)
         if not texto or not texto.strip():
-            self.bandeja.notificar("Corretor de texto", "Selecione o texto antes de usar o atalho.")
+            self.bandeja.notificar("Corretor de texto", "Clique na caixa de mensagem e tente novamente.")
             return
         self._abrir_janela(acao, texto, anterior, alvo)
 
