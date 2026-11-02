@@ -1,7 +1,8 @@
 {
-  "versao": "0.1.0",
+  "versao": "0.2.0",
   "ignorar": ["Ezer", "Iadã", "Ferreira", "PJe", "OAB", "RPV", "INSS", "CNJ", "TJES", "TRT", "STJ", "STF"],
   "substituicoes": [
+    {"padrao": "\\bamem\\b", "troca": "amém", "motivo": "Acentuação"},
     {"padrao": "\\bvc\\b", "troca": "você", "motivo": "Abreviação informal"},
     {"padrao": "\\bvcs\\b", "troca": "vocês", "motivo": "Abreviação informal"},
     {"padrao": "\\btb\\b", "troca": "também", "motivo": "Abreviação informal"},
@@ -21,6 +22,10 @@
     {"padrao": "\\bprevilégio\\b", "troca": "privilégio", "motivo": "Grafia"},
     {"padrao": "\\badevogado\\b", "troca": "advogado", "motivo": "Grafia"},
     {"padrao": "\\bsentensa\\b", "troca": "sentença", "motivo": "Grafia"},
+    {"padrao": "\\b(não|nao|o que|quem|qual) e\\b(?! não| nao)", "troca": "\\1 é", "motivo": "Verbo ser leva acento"},
+    {"padrao": "\\b(você|voce|vc|ele|ela|isso|isto|aquilo|tudo|nada|já|ja|também|tambem|só|so) e (muito|muita|bem|mais|menos|possível|possivel|necessário|necessario|importante|bom|boa|ótimo|otimo|ótima|otima|verdade|certo|certa|errado|errada|obrigatório|obrigatorio|urgente|simples|fácil|facil|difícil|dificil)\\b", "troca": "\\1 é \\2", "motivo": "Verbo ser leva acento"},
+    {"padrao": "\\b(você|voce|vc) e (um|uma)\\b", "troca": "\\1 é \\2", "motivo": "Verbo ser leva acento"},
+    {"padrao": "\\b(valor|prazo|processo|contrato|audiência|audiencia|sentença|sentenca|juiz|pedido|caso|problema|importante|ideal|melhor) e (de|do|da|o|a|um|uma|que|para|muito|bem|mais|menos|R\\$)", "troca": "\\1 é \\2", "motivo": "Verbo ser leva acento"},
     {"padrao": "\\bate\\b", "troca": "até", "motivo": "Acentuação"},
     {"padrao": "\\bamanha\\b", "troca": "amanhã", "motivo": "Acentuação"},
     {"padrao": "\\besta (em|no|na|nos|nas|sendo|aguardando|pronto|pronta|pendente|marcada|marcado)\\b", "troca": "está \\1", "motivo": "Verbo estar leva acento"},

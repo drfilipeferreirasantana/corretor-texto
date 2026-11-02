@@ -3,6 +3,7 @@ import ctypes
 import queue
 import sys
 import threading
+import time
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -29,6 +30,7 @@ class Aplicativo:
         self.digitacao = CorrecaoAoDigitar(self.linguagem)
         self.barra = None
         self.janela_externa = None
+        self.cancelar = None
 
     def _itens_menu(self):
         estado = "ligada" if self.digitacao.gancho else "desligada"
@@ -59,7 +61,10 @@ class Aplicativo:
         config.salvar("digitacao_ligada", ligada)
         if self.barra:
             self.barra.mostrar_digitacao(ligada)
-        self.bandeja.notificar("Corretor de texto", f"Correção ao digitar {'ligada' if ligada else 'desligada'}.")
+        mensagem = "Correção ao digitar desligada."
+        if ligada:
+            mensagem = "Correção ao digitar ligada em: " + ", ".join(self.cfg["digitacao_janelas"]) + "."
+        self.bandeja.notificar("Corretor de texto", mensagem)
 
     def iniciar(self):
         self.bandeja.start()
@@ -92,6 +97,8 @@ class Aplicativo:
                 acao, dados = self.fila.get_nowait()
                 if acao in ("corrigir", "reformular"):
                     self._acionar(acao)
+                elif acao == "parcial":
+                    self._mostrar_parcial(*dados)
                 elif acao == "resultado":
                     self._mostrar_resultado(*dados)
                 elif acao == "alternar_barra":
@@ -137,6 +144,7 @@ class Aplicativo:
         self._abrir_janela(acao, texto, anterior, alvo)
 
     def _abrir_janela(self, acao, texto, anterior, alvo):
+        self._cancelar_pedido()
         if self.janela:
             self.janela.destroy()
         self.janela = jan = tk.Toplevel(self.raiz)
@@ -157,7 +165,7 @@ class Aplicativo:
             linha = ttk.Frame(quadro)
             linha.pack(fill="x", pady=(0, 8))
             ttk.Label(linha, text="Estilo:").pack(side="left")
-            self.estilo = ttk.Combobox(linha, state="readonly", values=list(reformulacao.ESTILOS), width=20)
+            self.estilo = ttk.Combobox(linha, state="readonly", values=list(reformulacao.ESTILOS), width=38)
             self.estilo.current(0)
             self.estilo.pack(side="left", padx=6)
             self.estilo.bind("<<ComboboxSelected>>", lambda _: self._processar())
@@ -178,11 +186,34 @@ class Aplicativo:
         self.botao_substituir = ttk.Button(botoes, text="Substituir", command=self._substituir, state="disabled")
         self.botao_substituir.pack(side="right")
         ttk.Button(botoes, text="Cancelar", command=self._fechar).pack(side="right", padx=6)
+        if acao == "corrigir":
+            ttk.Button(botoes, text="Arrumar frases e pontuação",
+                       command=lambda: self._abrir_janela("reformular", texto, anterior, alvo)).pack(side="left")
         self._processar()
         jan.lift()
         jan.focus_force()
 
+    def _cancelar_pedido(self):
+        if self.cancelar:
+            self.cancelar.set()
+
+    def _atualizar_tempo(self, pedido, inicio):
+        if not self.janela or pedido is not self.estado["pedido"] or self.botao_substituir["state"] == "normal":
+            return
+        if self.rotulo_avisos.cget("text").startswith(("Processando", "Escrevendo")):
+            etapa = "Escrevendo" if self.caixa_sugestao.get("1.0", "end-1c") else "Processando"
+            self.rotulo_avisos.config(text=f"{etapa}... {int(time.monotonic() - inicio)} s")
+        self.raiz.after(1000, lambda: self._atualizar_tempo(pedido, inicio))
+
+    def _mostrar_parcial(self, pedido, texto):
+        if self.janela and pedido is self.estado["pedido"]:
+            self.caixa_sugestao.delete("1.0", "end")
+            self.caixa_sugestao.insert("1.0", texto)
+            self.caixa_sugestao.see("end")
+
     def _processar(self):
+        self._cancelar_pedido()
+        cancelar = self.cancelar = threading.Event()
         pedido = self.estado["pedido"] = object()
         acao, texto = self.estado["acao"], self.estado["texto"]
         estilo = self.estilo.get() if acao == "reformular" else None
@@ -199,7 +230,12 @@ class Aplicativo:
                 if acao == "corrigir":
                     resultado = correcao.corrigir(texto, self.linguagem)
                 else:
-                    resultado = reformulacao.reformular(texto, estilo, self.modelo)
+                    resultado = reformulacao.reformular(
+                        texto, estilo, self.modelo, self.linguagem,
+                        lambda parcial: self.fila.put(("parcial", (pedido, parcial))), cancelar,
+                    )
+                    if resultado is None:
+                        return
             except ComponenteAusente as erro:
                 resultado = {"erro": f"{erro} Use \"Verificar atualizações\" no ícone da bandeja."}
             except Exception as erro:
@@ -207,6 +243,7 @@ class Aplicativo:
             self.fila.put(("resultado", (pedido, resultado)))
 
         threading.Thread(target=trabalhar, daemon=True).start()
+        self._atualizar_tempo(pedido, time.monotonic())
 
     def _mostrar_resultado(self, pedido, resultado):
         if not self.janela or pedido is not self.estado["pedido"]:
@@ -221,6 +258,7 @@ class Aplicativo:
         for trecho, alterado in original:
             self.caixa_original.insert("end", trecho, "alterado" if alterado else ())
         self.caixa_original.config(state="disabled")
+        self.caixa_sugestao.delete("1.0", "end")
         for trecho, alterado in nova:
             self.caixa_sugestao.insert("end", trecho, "alterado" if alterado else ())
         linhas = [f"Atenção: {aviso}" for aviso in resultado["avisos"]]
@@ -241,6 +279,7 @@ class Aplicativo:
         janelas.colar_na_janela(alvo, texto, anterior)
 
     def _fechar(self):
+        self._cancelar_pedido()
         if self.janela:
             self.janela.destroy()
             self.janela = None

@@ -92,11 +92,14 @@ class Modelo(Servico):
             raise ComponenteAusente("Modelo de reformulação não instalado.")
         self.processo = subprocess.Popen(
             [str(executaveis[-1]), "-m", str(modelos[-1]), "--host", "127.0.0.1",
-             "--port", url.rsplit(":", 1)[1], "--ctx-size", "2048", "--threads", str(cfg["threads_modelo"])],
+             "--port", url.rsplit(":", 1)[1], "--ctx-size", "4096", "--parallel", "1", "--threads", str(cfg["threads_modelo"])],
             creationflags=SEM_JANELA, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         _aguardar(f"{url}/health", self.processo, 120, "Modelo")
         return url
+
+    def marcar_uso(self) -> None:
+        self.ultimo_uso = time.monotonic()
 
     def liberar_se_ocioso(self) -> None:
         minutos = config.carregar()["minutos_para_liberar_modelo"]

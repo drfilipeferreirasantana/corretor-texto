@@ -18,8 +18,8 @@ Corrige e reformula o texto selecionado em qualquer chat do Windows, sem enviar 
 - Só atua em janelas cujo título contenha um dos nomes de `digitacao_janelas`, em `dados/config.json`.
 - As correções vêm de `dados/correcoes_digitacao.json` e, com o LanguageTool instalado, também dele.
 - Vírgula e concordância ficam no `Ctrl+Shift+1`, porque dependem da frase inteira.
-- A última palavra antes do `Enter` não é corrigida, porque a mensagem já foi enviada.
-- O programa observa as teclas para funcionar. Nada é gravado em disco ou enviado.
+- Ao apertar `Enter`, corrige a última palavra da lista e, em mensagens de 4 palavras ou mais, coloca o ponto final antes de enviar. `ponto_final_ao_enviar` desliga o ponto.
+- O programa observa as teclas para funcionar e guarda só os últimos 120 caracteres da mensagem, na memória. Nada é gravado em disco ou enviado.
 
 ## Personalização
 

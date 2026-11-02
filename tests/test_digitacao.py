@@ -1,7 +1,8 @@
+import json
 import unittest
 
-from corretor import digitacao, janelas
-from corretor.digitacao import Acao, Motor
+from corretor import config, digitacao, janelas
+from corretor.digitacao import Motor
 
 
 class Tela:
@@ -110,6 +111,109 @@ class MotorDigitacao(unittest.TestCase):
         t = tela(["voce"])
         t.digitar("Certo voce ")
         self.assertEqual(t.texto, "Certo voce ")
+
+
+class Contexto(unittest.TestCase):
+    def tela(self):
+        # Lê as regras do projeto, e não as de uma versão já instalada em componentes/.
+        regras = json.loads((config.DADOS / "regras.json").read_text(encoding="utf-8"))
+        return Tela(Motor({"voce": "você", "mae": "mãe", "nao": "não", "amem": "amém"}, regras.get("ignorar", []), regras, True))
+
+    def test_e_verbo_com_contexto(self):
+        t = self.tela()
+        t.digitar("voce e uma bênção ")
+        self.assertEqual(t.texto, "Você é uma bênção ")
+
+    def test_e_conjuncao_nao_muda(self):
+        t = self.tela()
+        t.digitar("Você e a sua filha e eu ")
+        self.assertEqual(t.texto, "Você e a sua filha e eu ")
+
+    def test_isso_e_aquilo_nao_muda(self):
+        t = self.tela()
+        t.digitar("Isso e aquilo ")
+        self.assertEqual(t.texto, "Isso e aquilo ")
+
+    def test_isso_e_muito_importante(self):
+        t = self.tela()
+        t.digitar("Certo isso e muito importante ")
+        self.assertEqual(t.texto, "Certo isso é muito importante ")
+
+    def test_nao_e(self):
+        t = self.tela()
+        t.digitar("Certo nao e simples ")
+        self.assertEqual(t.texto, "Certo não é simples ")
+
+    def test_valor_e(self):
+        t = self.tela()
+        t.digitar("O valor e R$ 100 ")
+        self.assertEqual(t.texto, "O valor é R$ 100 ")
+
+    def test_crase_de_hora_ao_digitar(self):
+        t = self.tela()
+        t.digitar("Vou as 14h ")
+        self.assertEqual(t.texto, "Vou às 14h ")
+
+    def test_desfazer_contexto(self):
+        t = self.tela()
+        t.digitar("Certo isso e muito ")
+        self.assertEqual(t.texto, "Certo isso é muito ")
+        t.apagar()
+        self.assertEqual(t.texto, "Certo isso e muito")
+        t.digitar(" bom ")
+        self.assertEqual(t.texto, "Certo isso e muito bom ")
+
+    def enter(self, t):
+        acao = t.motor.finalizar()
+        if acao:
+            self.assertTrue(acao.enter)
+            t.aplicar(acao)
+        return acao
+
+    def test_ultima_palavra_ao_enviar(self):
+        t = self.tela()
+        t.digitar("Amem minha mae")
+        self.assertIsNotNone(self.enter(t))
+        self.assertEqual(t.texto, "Amém minha mãe")
+
+    def test_ponto_final_ao_enviar(self):
+        t = self.tela()
+        t.digitar("Vou enviar o contrato amanhã")
+        self.enter(t)
+        self.assertEqual(t.texto, "Vou enviar o contrato amanhã.")
+
+    def test_ponto_final_com_espaco_no_fim(self):
+        t = self.tela()
+        t.digitar("Vou enviar o contrato amanhã ")
+        self.enter(t)
+        self.assertEqual(t.texto, "Vou enviar o contrato amanhã.")
+
+    def test_mensagem_curta_sem_ponto(self):
+        t = self.tela()
+        t.digitar("Bom dia")
+        self.assertIsNone(self.enter(t))
+        self.assertEqual(t.texto, "Bom dia")
+
+    def test_nao_pontua_pergunta_link_ou_numero(self):
+        for texto in ["Você vai ao fórum hoje?", "Veja o site www.exemplo.com.br", "O valor total é 100", "Pode vir amanhã 😀"]:
+            t = self.tela()
+            t.digitar(texto)
+            self.enter(t)
+            self.assertEqual(t.texto, texto)
+
+    def test_inicio_de_frase_na_ultima_palavra(self):
+        t = self.tela()
+        t.digitar("gostaria")
+        self.enter(t)
+        self.assertEqual(t.texto, "Gostaria")
+
+    def test_nova_mensagem_depois_de_enviar(self):
+        t = self.tela()
+        t.digitar("Bom dia")
+        self.enter(t)
+        t.texto = ""
+        t.digitar("gostaria ")
+        self.assertEqual(t.texto, "Gostaria ")
 
 
 class RespostaOrtografia(unittest.TestCase):

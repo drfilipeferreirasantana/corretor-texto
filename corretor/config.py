@@ -22,7 +22,8 @@ PADRAO = {
     "minutos_para_liberar_modelo": 10,
     "url_manifesto": "https://github.com/drfilipeferreirasantana/corretor-texto/releases/download/componentes/manifesto.json",
     "digitacao_ligada": False,
-    "digitacao_janelas": ["WhatsApp", "Telegram", "Messenger", "Instagram", "Microsoft Teams", "Slack"],
+    "ponto_final_ao_enviar": True,
+    "digitacao_janelas": ["WhatsApp", "Telegram", "Messenger", "Instagram", "Microsoft Teams", "Slack", "Claude"],
 }
 
 

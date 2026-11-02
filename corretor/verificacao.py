@@ -1,6 +1,7 @@
 """Compara o original e a reformulação para avisar sobre mudanças de sentido."""
 import difflib
 import re
+import unicodedata
 
 _NUMERO = re.compile(r"\d[\d.,/:\-]*\d|\d")
 _PALAVRA = re.compile(r"\w+", re.UNICODE)
@@ -40,6 +41,16 @@ def comparar(original: str, sugestao: str) -> list[str]:
     if negacoes_o != negacoes_s:
         avisos.append("A quantidade de negações mudou (\"não\", \"nunca\", \"sem\"...). Confira o sentido.")
     return avisos
+
+
+def _sem_acento(palavra: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", palavra) if not unicodedata.combining(c))
+
+
+def palavras_retiradas(original: str, nova: str) -> list[str]:
+    """Na revisão, o modelo não deve trocar nem retirar palavras."""
+    presentes = {_sem_acento(p) for p in _palavras(nova)}
+    return [p for p in dict.fromkeys(_palavras(original)) if len(p) >= 4 and _sem_acento(p) not in presentes]
 
 
 def trechos(a: str, b: str) -> tuple[list[tuple[str, bool]], list[tuple[str, bool]]]:

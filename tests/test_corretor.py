@@ -72,6 +72,15 @@ class Verificacao(unittest.TestCase):
 
     def test_limpa_raciocinio_da_resposta(self):
         self.assertEqual(reformulacao.limpar_resposta("<think>\n\n</think>\n\nTexto final."), "Texto final.")
+        self.assertEqual(reformulacao.limpar_resposta("<think>ainda pensan"), "")
+
+    def test_acabamento(self):
+        self.assertEqual(reformulacao.acabamento("os documentos chegaram"), "Os documentos chegaram.")
+        self.assertEqual(reformulacao.acabamento("Tudo bem?"), "Tudo bem?")
+
+    def test_palavras_retiradas(self):
+        retiradas = verificacao.palavras_retiradas("como podemos melhorar nao", "Você pode melhorar não.")
+        self.assertEqual(retiradas, ["como", "podemos"])
 
     def test_nome_removido(self):
         avisos = verificacao.comparar("Falei com a Dra. Mariana ontem e com Pedro.", "Falei com a advogada ontem.")

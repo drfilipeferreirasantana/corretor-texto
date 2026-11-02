@@ -12,12 +12,14 @@ _NUCLEO = re.compile(r"^([^\w]*)([^\W\d_]+(?:[-'][^\W\d_]+)*)([^\w]*)$", re.UNIC
 _ABREVIACOES = {"dr", "dra", "sr", "sra", "srta", "prof", "profa", "art", "arts", "av", "n", "nº",
                 "fls", "pág", "p", "etc", "ex", "exa", "exmo", "exma", "v"}
 _TAMANHO_MINIMO_CONSULTA = 4
+_MEMORIA_CONTEXTO = 120
 
 
 @dataclass
 class Acao:
     apagar: int
     escrever: str
+    enter: bool = False
 
 
 @dataclass
@@ -29,14 +31,19 @@ class Consulta:
 class Motor:
     """Regras de correção, sem acesso ao teclado, para poderem ser testadas."""
 
-    def __init__(self, correcoes: dict[str, str], ignorar: list[str] | None = None):
+    def __init__(self, correcoes: dict[str, str], ignorar: list[str] | None = None, regras: dict | None = None,
+                 pontuar: bool = False):
         self.correcoes = {chave.casefold(): valor for chave, valor in correcoes.items()}
         self.ignorar = {termo.casefold() for termo in ignorar or []}
+        self.regras = regras
+        self.pontuar = pontuar
         self.trava = threading.RLock()
         self.nova_mensagem()
 
     def _limpar(self):
         self.token = ""
+        self.recente = ""
+        self.palavras = 0
         self.desfazer = None
         self.pular_proximo = False
         self.consulta = None
@@ -61,10 +68,12 @@ class Motor:
             if desfazer:
                 corrigido, original, nucleo = desfazer
                 self.token = original
+                self.recente = ""
                 self.pular_proximo = True
                 if nucleo:
                     self.ignorar.add(nucleo.casefold())
                 return Acao(len(corrigido), original)
+            self.recente = self.recente[:-1]
             if self.token:
                 self.token = self.token[:-1]
             else:
@@ -74,6 +83,7 @@ class Motor:
     def digitar(self, caractere: str) -> tuple[Acao | None, Consulta | None]:
         with self.trava:
             self.desfazer = None
+            self.recente = (self.recente + caractere)[-_MEMORIA_CONTEXTO:]
             if self.consulta:
                 self.consulta["depois"] += caractere
             if not caractere.isspace():
@@ -82,7 +92,59 @@ class Motor:
             token, self.token = self.token, ""
             if not token:
                 return None, None
-            return self._avaliar(token, caractere)
+            self.palavras += 1
+            acao, consulta = self._avaliar(token, caractere)
+            return self._aplicar_contexto(acao, consulta)
+
+    def _aplicar_contexto(self, acao: Acao | None, consulta: Consulta | None) -> tuple[Acao | None, Consulta | None]:
+        """Regras que olham as palavras anteriores, como "você e uma" → "você é uma"."""
+        antes = self.recente
+        if acao:
+            if acao.apagar > len(antes):
+                self.recente = ""
+                return acao, consulta
+            antes_token = antes[:len(antes) - acao.apagar] + acao.escrever
+        else:
+            antes_token = antes
+        if not self.regras:
+            self.recente = antes_token
+            return acao, consulta
+        novo = modulo_regras.aplicar(antes_token, self.regras)[0]
+        self.recente = novo[-_MEMORIA_CONTEXTO:]
+        if novo == antes_token:
+            return acao, consulta
+        comum = 0
+        while comum < min(len(antes), len(novo)) and antes[comum] == novo[comum]:
+            comum += 1
+        self.consulta = None
+        self.desfazer = (novo[comum:-1], antes[comum:-1], None)
+        return Acao(len(antes) - comum, novo[comum:]), None
+
+    def finalizar(self) -> Acao | None:
+        """Antes de enviar: corrige a última palavra e, em mensagens de 4 palavras ou mais, coloca o ponto."""
+        with self.trava:
+            token = self.token
+            palavras = self.palavras + (1 if token else 0)
+            acao = None
+            if token:
+                inicio = self.inicio_frase
+                avaliada, _ = self._avaliar(token, " ")
+                self.inicio_frase = inicio
+                novo = avaliada.escrever[:-1] if avaliada else token
+                apagar = len(token)
+            else:
+                ultimo = self.recente.rstrip().rsplit(None, 1)[-1] if self.recente.strip() else ""
+                novo, apagar = ultimo, len(self.recente) - len(self.recente.rstrip())
+            achado = _NUCLEO.match(novo)
+            final = novo
+            if self.pontuar and palavras >= 4 and achado and not achado.group(3):
+                final = novo + "."
+            if token and final != token:
+                acao = Acao(apagar, final, enter=True)
+            elif not token and final != novo:
+                acao = Acao(apagar, ".", enter=True)
+            self.nova_mensagem()
+            return acao
 
     def _avaliar(self, token: str, espaco: str) -> tuple[Acao | None, Consulta | None]:
         pular, self.pular_proximo = self.pular_proximo, False
@@ -126,6 +188,7 @@ class Motor:
             if not sugestao or not consulta or consulta["numero"] != numero:
                 return None
             self.consulta = None
+            self.recente = ""
             nucleo_escrito = consulta["escrito"].removeprefix(consulta["antes"])
             maiuscula = nucleo_escrito[:1].isupper()
             nova = sugestao[0].upper() + sugestao[1:] if maiuscula else sugestao
@@ -164,7 +227,8 @@ class CorrecaoAoDigitar:
         atualizado = config.COMPONENTES / "regras" / "correcoes_digitacao.json"
         arquivo = atualizado if atualizado.exists() else config.DADOS / "correcoes_digitacao.json"
         correcoes = json.loads(arquivo.read_text(encoding="utf-8"))
-        return Motor(correcoes, modulo_regras.carregar().get("ignorar", []))
+        regras = modulo_regras.carregar()
+        return Motor(correcoes, regras.get("ignorar", []), regras, config.carregar()["ponto_final_ao_enviar"])
 
     def ligar(self) -> None:
         if self.gancho:
@@ -194,10 +258,16 @@ class CorrecaoAoDigitar:
     def _ao_clicar(self) -> None:
         self.motor.nova_mensagem()
 
-    def _ao_teclar(self, tipo: str, caractere: str | None) -> None:
+    def _ao_teclar(self, tipo: str, caractere: str | None) -> bool:
+        """Devolve True quando a tecla deve ser retida: o Enter só segue depois da correção."""
         if not self._ativo():
-            return
+            return False
         if tipo == "enter":
+            acao = self.motor.finalizar()
+            if acao:
+                self.fila_acoes.put(acao)
+                return True
+        elif tipo == "quebra":
             self.motor.nova_mensagem()
         elif tipo == "mover":
             self.motor.cursor_movido()
@@ -211,10 +281,11 @@ class CorrecaoAoDigitar:
                 self.fila_acoes.put(acao)
             if consulta:
                 self.fila_consultas.put(consulta)
+        return False
 
     def _enviar(self) -> None:
         while (acao := self.fila_acoes.get()) is not None:
-            janelas.substituir_digitado(acao.apagar, acao.escrever)
+            janelas.substituir_digitado(acao.apagar, acao.escrever, acao.enter)
 
     def _consultar(self) -> None:
         while (consulta := self.fila_consultas.get()) is not None:

@@ -289,7 +289,7 @@ def _tecla_unicode(unidade: int, soltar: bool = False) -> INPUT:
     return evento
 
 
-def substituir_digitado(apagar: int, escrever: str) -> int:
+def substituir_digitado(apagar: int, escrever: str, enter: bool = False) -> int:
     """Apaga caracteres e escreve o texto na janela ativa, num único envio."""
     eventos = []
     for _ in range(apagar):
@@ -298,6 +298,8 @@ def substituir_digitado(apagar: int, escrever: str) -> int:
     for indice in range(0, len(dados), 2):
         unidade = int.from_bytes(dados[indice:indice + 2], "little")
         eventos += [_tecla_unicode(unidade), _tecla_unicode(unidade, True)]
+    if enter:
+        eventos += [_tecla(VK_RETURN), _tecla(VK_RETURN, True)]
     if not eventos:
         return 0
     return user32.SendInput(len(eventos), (INPUT * len(eventos))(*eventos), ctypes.sizeof(INPUT))
@@ -336,10 +338,11 @@ class GanchoEntrada(threading.Thread):
         self.instalado = False
         self.acento = ""
 
-    def _classificar(self, dados: KBDLLHOOKSTRUCT) -> None:
+    def _classificar(self, dados: KBDLLHOOKSTRUCT) -> bool:
+        """Devolve True quando a tecla deve ser retida."""
         vk = dados.vkCode
         if vk in _MODIFICADORES:
-            return
+            return False
         ctrl = user32.GetAsyncKeyState(VK_CONTROL) & 0x8000
         alt = user32.GetAsyncKeyState(VK_MENU) & 0x8000
         win = user32.GetAsyncKeyState(0x5B) & 0x8000 or user32.GetAsyncKeyState(0x5C) & 0x8000
@@ -348,7 +351,10 @@ class GanchoEntrada(threading.Thread):
             self.ao_teclar("mover", None)
         elif vk == VK_RETURN:
             self.acento = ""
-            self.ao_teclar("enter", None)
+            if user32.GetAsyncKeyState(VK_SHIFT) & 0x8000:
+                self.ao_teclar("quebra", None)
+            else:
+                return bool(self.ao_teclar("enter", None))
         elif vk == VK_BACK:
             self.acento = ""
             self.ao_teclar("apagar", None)
@@ -364,13 +370,15 @@ class GanchoEntrada(threading.Thread):
                     texto, self.acento = compor_acento(self.acento, texto), ""
                 for caractere in texto:
                     self.ao_teclar("caractere", caractere)
+        return False
 
     def _teclado(self, codigo, wparam, lparam):
         if codigo == 0 and wparam in (WM_KEYDOWN, WM_SYSKEYDOWN):
             dados = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
             if not dados.flags & LLKHF_INJECTED:
                 try:
-                    self._classificar(dados)
+                    if self._classificar(dados):
+                        return 1
                 except Exception:
                     pass  # uma falha aqui não pode travar o teclado
         return user32.CallNextHookEx(None, codigo, wparam, lparam)
