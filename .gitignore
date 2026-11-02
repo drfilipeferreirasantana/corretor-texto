@@ -2,3 +2,4 @@ __pycache__/
 componentes/
 dados/config.json
 dados/meu_dicionario.json
+dados/registro.log

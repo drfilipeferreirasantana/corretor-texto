@@ -338,6 +338,7 @@ def main():
         pass
     if not janelas.instancia_unica():
         return
+    janelas.prioridade_alta()
     if "--diagnostico" in sys.argv:
         aplicativo = Aplicativo()
         aplicativo.bandeja.start()

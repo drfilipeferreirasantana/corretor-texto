@@ -6,7 +6,8 @@ import urllib.request
 
 from . import config
 
-SEM_JANELA = 0x08000000
+# Prioridade abaixo do normal: o teclado e os outros programas não podem esperar por estes serviços.
+SEM_JANELA = 0x08000000 | 0x00004000
 
 
 class ComponenteAusente(Exception):

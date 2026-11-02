@@ -1,5 +1,5 @@
 {
-  "versao": "0.2.0",
+  "versao": "0.3.0",
   "ignorar": ["Ezer", "Iadã", "Ferreira", "PJe", "OAB", "RPV", "INSS", "CNJ", "TJES", "TRT", "STJ", "STF"],
   "substituicoes": [
     {"padrao": "\\bamem\\b", "troca": "amém", "motivo": "Acentuação"},
@@ -26,6 +26,7 @@
     {"padrao": "\\b(você|voce|vc|ele|ela|isso|isto|aquilo|tudo|nada|já|ja|também|tambem|só|so) e (muito|muita|bem|mais|menos|possível|possivel|necessário|necessario|importante|bom|boa|ótimo|otimo|ótima|otima|verdade|certo|certa|errado|errada|obrigatório|obrigatorio|urgente|simples|fácil|facil|difícil|dificil)\\b", "troca": "\\1 é \\2", "motivo": "Verbo ser leva acento"},
     {"padrao": "\\b(você|voce|vc) e (um|uma)\\b", "troca": "\\1 é \\2", "motivo": "Verbo ser leva acento"},
     {"padrao": "\\b(valor|prazo|processo|contrato|audiência|audiencia|sentença|sentenca|juiz|pedido|caso|problema|importante|ideal|melhor) e (de|do|da|o|a|um|uma|que|para|muito|bem|mais|menos|R\\$)", "troca": "\\1 é \\2", "motivo": "Verbo ser leva acento"},
+    {"padrao": "(^|[.!?]\\s+)e (verdade|certo|claro|importante|muito|bom|possível|possivel|necessário|necessario)\\b", "troca": "\\1É \\2", "motivo": "Verbo ser leva acento"},
     {"padrao": "\\bate\\b", "troca": "até", "motivo": "Acentuação"},
     {"padrao": "\\bamanha\\b", "troca": "amanhã", "motivo": "Acentuação"},
     {"padrao": "\\besta (em|no|na|nos|nas|sendo|aguardando|pronto|pronta|pendente|marcada|marcado)\\b", "troca": "está \\1", "motivo": "Verbo estar leva acento"},

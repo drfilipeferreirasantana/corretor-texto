@@ -3,6 +3,7 @@ import json
 import queue
 import re
 import threading
+import time
 from dataclasses import dataclass
 
 from . import config, correcao, janelas, regras as modulo_regras
@@ -294,8 +295,12 @@ class CorrecaoAoDigitar:
                 continue
             try:
                 sugestao = consultar_ortografia(consulta.nucleo, self.linguagem.url())
-            except OSError:
+            except (OSError, ValueError):
                 continue
+            # Teclas enviadas entre o acento e a letra fariam o Windows perder o acento.
+            limite = time.monotonic() + 3
+            while self.gancho and self.gancho.acento and time.monotonic() < limite:
+                time.sleep(0.02)
             acao = self.motor.resposta_consulta(consulta.numero, sugestao)
             if acao:
                 self.fila_acoes.put(acao)

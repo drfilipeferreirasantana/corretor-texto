@@ -149,6 +149,11 @@ class Contexto(unittest.TestCase):
         t.digitar("O valor e R$ 100 ")
         self.assertEqual(t.texto, "O valor é R$ 100 ")
 
+    def test_e_verdade_depois_de_ponto(self):
+        t = self.tela()
+        t.digitar("Colocar vírgula. e verdade viu ")
+        self.assertEqual(t.texto, "Colocar vírgula. É verdade viu ")
+
     def test_crase_de_hora_ao_digitar(self):
         t = self.tela()
         t.digitar("Vou as 14h ")
@@ -278,6 +283,10 @@ class Janela(unittest.TestCase):
         self.assertEqual(janelas.compor_acento("^", "E"), "Ê")
         self.assertEqual(janelas.compor_acento("´", " "), "´")
         self.assertEqual(janelas.compor_acento("´", "x"), "´x")
+
+    def test_acento_que_o_windows_ja_compos(self):
+        self.assertEqual(janelas.compor_acento("´", "é"), "é")
+        self.assertEqual(janelas.compor_acento("´", "´e"), "´e")
 
 
 if __name__ == "__main__":

@@ -3,8 +3,11 @@ import ctypes
 import os
 import threading
 import time
+import traceback
 import unicodedata
 from ctypes import wintypes
+
+from . import config
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -218,7 +221,7 @@ def interpretar_atalho(atalho: str) -> tuple[int, int]:
 
 
 WH_KEYBOARD_LL, WH_MOUSE_LL = 13, 14
-WM_KEYDOWN, WM_SYSKEYDOWN, WM_QUIT = 0x0100, 0x0104, 0x0012
+WM_KEYDOWN, WM_SYSKEYDOWN, WM_QUIT, WM_TIMER = 0x0100, 0x0104, 0x0012, 0x0113
 WM_LBUTTONDOWN, WM_RBUTTONDOWN = 0x0201, 0x0204
 LLKHF_INJECTED = 0x10
 KEYEVENTF_UNICODE = 0x0004
@@ -238,7 +241,10 @@ _tipos(user32.SetWindowsHookExW, [ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, wi
 _tipos(user32.UnhookWindowsHookEx, [wintypes.HHOOK], wintypes.BOOL)
 _tipos(user32.CallNextHookEx, [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM], LRESULT)
 _tipos(user32.PostThreadMessageW, [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM], wintypes.BOOL)
-_tipos(user32.GetWindowTextW, [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int], ctypes.c_int)
+_tipos(user32.InternalGetWindowText, [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int], ctypes.c_int)
+_tipos(user32.SetTimer, [wintypes.HWND, ctypes.c_size_t, wintypes.UINT, wintypes.LPVOID], ctypes.c_size_t)
+_tipos(kernel32.GetCurrentProcess, [], wintypes.HANDLE)
+_tipos(kernel32.SetPriorityClass, [wintypes.HANDLE, wintypes.DWORD], wintypes.BOOL)
 _tipos(user32.GetWindowThreadProcessId, [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)], wintypes.DWORD)
 _tipos(user32.GetKeyboardLayout, [wintypes.DWORD], wintypes.HKL)
 _tipos(user32.GetKeyState, [ctypes.c_int], ctypes.c_short)
@@ -278,9 +284,20 @@ def impedir_foco(janela) -> bool:
 
 
 def titulo_janela(janela) -> str:
+    # GetWindowText espera a janela responder. Com o chat ocupado, o Windows removeria o gancho por lentidão.
     buffer = ctypes.create_unicode_buffer(256)
-    user32.GetWindowTextW(janela, buffer, 256)
+    user32.InternalGetWindowText(janela, buffer, 256)
     return buffer.value
+
+
+def registrar_erro() -> None:
+    """Guarda só o erro e a linha do código, nunca o texto digitado."""
+    with (config.DADOS / "registro.log").open("a", encoding="utf-8") as arquivo:
+        arquivo.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\n{traceback.format_exc()}\n")
+
+
+def prioridade_alta() -> None:
+    kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), 0x00008000)
 
 
 def _tecla_unicode(unidade: int, soltar: bool = False) -> INPUT:
@@ -324,12 +341,17 @@ def compor_acento(acento: str, tecla: str) -> str:
     """Reproduz o que o Windows escreve: ´ + a = á, ´ + espaço = ´, ´ + x = ´x."""
     if tecla == " ":
         return acento
+    # O Windows às vezes já devolve a letra pronta. Somar o acento de novo criaria um caractere a mais.
+    if tecla.startswith(acento) or unicodedata.normalize("NFD", tecla) != tecla:
+        return tecla
     composto = unicodedata.normalize("NFC", tecla + _COMBINANTES.get(acento, ""))
     return composto if len(composto) == 1 else acento + tecla
 
 
 class GanchoEntrada(threading.Thread):
     """Observa teclado e mouse. Nada é gravado, e as teclas seguem normalmente para o programa ativo."""
+
+    REINSTALAR_MS = 15000
 
     def __init__(self, ao_teclar, ao_clicar):
         super().__init__(daemon=True)
@@ -380,7 +402,7 @@ class GanchoEntrada(threading.Thread):
                     if self._classificar(dados):
                         return 1
                 except Exception:
-                    pass  # uma falha aqui não pode travar o teclado
+                    registrar_erro()  # uma falha aqui não pode travar o teclado
         return user32.CallNextHookEx(None, codigo, wparam, lparam)
 
     def _mouse(self, codigo, wparam, lparam):
@@ -389,21 +411,31 @@ class GanchoEntrada(threading.Thread):
             self.ao_clicar()
         return user32.CallNextHookEx(None, codigo, wparam, lparam)
 
+    def _instalar(self):
+        instancia = kernel32.GetModuleHandleW(None)
+        self._gancho_teclado = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc_teclado, instancia, 0)
+        self._gancho_mouse = user32.SetWindowsHookExW(WH_MOUSE_LL, self._proc_mouse, instancia, 0)
+        self.instalado = bool(self._gancho_teclado and self._gancho_mouse)
+
+    def _remover(self):
+        if self._gancho_teclado:
+            user32.UnhookWindowsHookEx(self._gancho_teclado)
+        if self._gancho_mouse:
+            user32.UnhookWindowsHookEx(self._gancho_mouse)
+
     def run(self):
         self._id_thread = kernel32.GetCurrentThreadId()
         self._proc_teclado, self._proc_mouse = HOOKPROC(self._teclado), HOOKPROC(self._mouse)
-        instancia = kernel32.GetModuleHandleW(None)
-        teclado = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc_teclado, instancia, 0)
-        mouse = user32.SetWindowsHookExW(WH_MOUSE_LL, self._proc_mouse, instancia, 0)
-        self.instalado = bool(teclado and mouse)
+        self._instalar()
         self.pronto.set()
+        user32.SetTimer(None, 0, self.REINSTALAR_MS, None)
         mensagem = wintypes.MSG()
         while user32.GetMessageW(ctypes.byref(mensagem), None, 0, 0) > 0:
-            pass
-        if teclado:
-            user32.UnhookWindowsHookEx(teclado)
-        if mouse:
-            user32.UnhookWindowsHookEx(mouse)
+            if mensagem.message == WM_TIMER:
+                # O Windows remove sem aviso um gancho que demorou, o que é comum com o processador cheio.
+                self._remover()
+                self._instalar()
+        self._remover()
 
     def encerrar(self) -> None:
         if self.pronto.wait(2):
